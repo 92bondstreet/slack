@@ -3,6 +3,8 @@
 
 Run a command; post it and its standard input, output, and error to Slack.  It's a tool for people that collaborate on UNIX servers.
 
+The command can also be used as a a simple and basic post message to Slack.
+
 Installation
 ------------
 
@@ -40,3 +42,20 @@ If you like, the output can be made into a nice pretty Slack attachment:
 And of course, you can point it at any channel, not just the one you configure as the default:
 
     slack --channel="#general" echo "Hello, world."
+
+Basic usage
+-----------
+
+If you like, you can use `slack` to just send a message (without input interpreting):
+
+    slack --message Hello world !
+
+With your slack username:
+
+    slack --username="rcrowley" --message Hello world !
+
+Point at any channel:
+
+    slack --username="rcrowley" --channel="#general" --message Hello world !
+
+The *basic* usage is conditioned by the `message` argument.
