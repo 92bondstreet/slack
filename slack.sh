@@ -6,9 +6,12 @@
 # by creating a new Incoming Webhook at <https://my.slack.com/services/new>.
 #
 #/ Usage: slack [--attach] [--channel=<channel>] [--stdin] ...
-#/   --attach            post to Slack with an attachment (defaults to fixed-width text)
-#/   --channel=<channel> post to this Slack channel (defaults to the integration's default channel)
-#/   --stdin             capture standard input and include it as a heredoc
+#/   --attach               post to Slack with an attachment (defaults to fixed-width text)
+#/   --channel=<channel>    post to this Slack channel (defaults to the integration's default channel)
+#/   --stdin                capture standard input and include it as a heredoc
+#/   --message              Basic message to post without standard {i,o,error}
+#/   --username=<username>  Slack username
+
 
 set -e
 
@@ -17,6 +20,8 @@ usage() {
     exit "$1"
 }
 ATTACH="" CHANNEL="null" STDIN=""
+MESSAGE="" USERNAME="${SUDO_USER:-"$USER"}@$(hostname)"
+BASIC=false FENCE='```'
 while [ "$#" -gt 0 ]
 do
     case "$1" in
@@ -26,6 +31,10 @@ do
         --ch=*) CHANNEL="\"$(echo "$1" | cut -d"=" -f"2-")\"" shift;;
         --channel=*) CHANNEL="\"$(echo "$1" | cut -d"=" -f"2-")\"" shift;;
         -s|--stdin) STDIN="--stdin" shift;;
+        -m|--message) MESSAGE="--message" shift;;
+        -u|--username) USERNAME="$2" shift 2;;
+        -u*) USERNAME="$(echo "$1" | cut -c"3-")" shift;;
+        --username=*) USERNAME="$(echo "$1" | cut -d"=" -f"2-")" shift;;
         -h|--help) usage 0;;
         -*) usage 1;;
         *) break;;
@@ -48,25 +57,45 @@ then
     fi
 
     tee "$TMP/stdin" | "$@" 2>&1 | tee "$TMP/stdout+stderr"
+fi
+
+# Case where user want to send a "default" message
+# we switch to standard slack messaging.
+if [ "$MESSAGE" ]
+then
+    BASIC=true
+    MESSAGE="$@" > "$TMP/stdout+stderr"
 else
     touch "$TMP/stdin"
     "$@" 2>&1 | tee "$TMP/stdout+stderr"
 fi
 
+# *nix username,hostname OR cli defined username
+USERNAME="$USERNAME"
+
+
+
 # Produce a properly-quoted command line for posting to Slack.  This should
 # be copy-pastable into a shell to run it again.
-QUOTED="${SUDO_USER:-"$USER"}@$(hostname)"
-if [ "$(whoami)" = "root" ]
-then QUOTED="$QUOTED #"
-else QUOTED="$QUOTED \$"
+if [ "$BASIC" = false ]
+then
+  QUOTED="${SUDO_USER:-"$USER"}@$(hostname)"
+  if [ "$(whoami)" = "root" ]
+  then QUOTED="$QUOTED #"
+  else QUOTED="$QUOTED \$"
+  fi
+  for ARG in "$@"
+  do
+      if echo "$ARG" | grep -F -q " "
+      then QUOTED="$QUOTED \\\"$ARG\\\""
+      else QUOTED="$QUOTED $ARG"
+      fi
+  done
+else
+  # simple message
+  FENCE=""
+  QUOTED="$MESSAGE"
 fi
-for ARG in "$@"
-do
-    if echo "$ARG" | grep -F -q " "
-    then QUOTED="$QUOTED \\\"$ARG\\\""
-    else QUOTED="$QUOTED $ARG"
-    fi
-done
 
 # Clean up quotes, newlines, tabs, and control characters for a JSON string.
 jsonify() {
@@ -115,7 +144,6 @@ EOF
 # the default behavior.  If standard input's been captured, it is shown
 # in heredoc syntax so it can be copy-pasted.
 else
-    FENCE='```'
     cat >"$TMP/data" <<EOF
 payload={
     "channel": $CHANNEL,
@@ -130,12 +158,12 @@ payload={
     )\\n$(
         jsonify <"$TMP/stdout+stderr"
     )$FENCE",
-    "username": "${SUDO_USER:-"$USER"}@$(hostname)"
+    "username": "$USERNAME"
 }
 EOF
 fi
 
 # Post to Slack and print the Slack API output to standard error.
 printf "slack: " >&2
-curl --data-urlencode "$(cat "$TMP/data")" -s "$SLACK_WEBHOOK_URL" >&2
+curl --data-urlencode "$(cat "$TMP/data")" -s "$SLACK_WEBHOOK_URL"
 echo >&2
