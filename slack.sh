@@ -165,5 +165,5 @@ fi
 
 # Post to Slack and print the Slack API output to standard error.
 printf "slack: " >&2
-curl --data-urlencode "$(cat "$TMP/data")" -s "$SLACK_WEBHOOK_URL"
+curl --data-urlencode "$(cat "$TMP/data")" -s "$SLACK_WEBHOOK_URL" >&2
 echo >&2
